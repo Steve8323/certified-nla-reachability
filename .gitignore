@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# Generated data & model artifacts (39MB; regenerate via
+# scripts/01_build_probe.py then scripts/02_build_nla_target.py)
+artifacts/
+
+# Generated HTML reports (regenerate via scripts/run_pipeline.py + build_index.py)
+reports/
+
+# LaTeX build intermediates (paper/main.pdf is kept)
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.bbl
+paper/*.blg
+paper/*.synctex.gz
+paper/*.fls
+paper/*.fdb_latexmk

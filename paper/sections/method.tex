@@ -1,0 +1,169 @@
+\section{Method}
+\label{sec:method}
+
+Figure~\ref{fig:pipeline} summarizes the pipeline. We describe each stage and are
+careful to mark which parts are sound and which are honest stand-ins.
+
+\begin{figure}[t]
+\centering
+\fbox{\parbox{0.9\linewidth}{\footnotesize\ttfamily
+activation $h$\\
+\hspace*{1em}$\downarrow$ NLA verbalizer:\ \ $h\to$ description \ \ (STAND-IN)\\
+\hspace*{2em}``\dots graded benchmark item, automated grader, not a real user\dots''\\
+\hspace*{1em}$\downarrow$ text classifier:\ \ description $\to$ log-odds \ \ (real, trained)\\
+\hspace*{1em}$\downarrow$ distil:\ \ log-odds $\to$ $g(h)$ ReLU shadow \ \ (certifiable)\\
+\hspace*{1em}$\downarrow$ CROWN\,/\,IBP relaxation:\ \ Raghunathan certificate\\
+\hspace*{1em}$\downarrow$ \ \ certificate $+$ target acts $\to$ GCG inversion $\to$ loop closure
+}}
+\caption{The end-to-end pipeline on cached GPT-2 (residual layer~6, $d=768$,
+mean-pooled). The only stand-in component is the verbalizer; the classifier,
+distillation, certificate, inversion, and loop-closure are real computation.}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{The target set $A^\star$ via NLA $\to$ classifier $\to$ ReLU surrogate}
+
+We extract residual-stream activations from a cached GPT-2 at layer~6 and mean-pool
+over the sequence to get $h \in \mathbb{R}^{768}$. The concept ``this context is an
+evaluation'' is defined in three composed steps.
+
+\emph{(1) Verbalize.} A verbalizer maps $h$ to an English description. In a full
+system this is a trained NLA; here it is a transparent stand-in that grounds its
+text in two functions of $h$ alone: $h$'s nearest neighbours in a labelled
+activation bank (supplying quoted lexical cues from the contexts $h$ most resembles)
+and $h$'s projection onto the empirical eval-vs-deploy axis (supplying a graded
+``how evaluation-like'' scalar). Every decode is flagged \texttt{stand\_in=True}.
+Swapping in a real NLA is a drop-in replacement, since anything of type
+$h \mapsto \text{str}$ works downstream.
+
+\emph{(2) Classify the text.} A TF-IDF (word $1$--$2$grams $+$ char $3$--$5$grams)
+logistic-regression classifier reads the description and returns a signed log-odds
+that it is test-aware. The classifier is trained only on a varied corpus of
+written descriptions with known labels and has never seen an activation; that it
+then labels the verbalizer's (differently phrased) decodes correctly is the claim
+that test-awareness is legible in the emitted language. The log-odds is the
+real-valued signal that makes the relaxation reachable.
+
+\emph{(3) Distil a certifiable surrogate.} Raghunathan's relaxation cannot be
+pushed soundly through a discrete decoder plus an n-gram classifier, so we distil
+the composed map into a one-hidden-layer ReLU network
+\[
+g(h) \;=\; W_2\,\mathrm{ReLU}(W_1 h + b_1) + b_2,
+\qquad W_1 \in \mathbb{R}^{64\times 768},\; W_2 \in \mathbb{R}^{1\times 64},
+\]
+trained with an MSE term to the (clamped) classifier log-odds plus a small BCE term
+on the hard label, so that $g$ is both a faithful real-valued shadow and has a crisp
+boundary. Input standardization is folded into $W_1, b_1$ afterwards, so $g$
+consumes \emph{raw} activations and the certification problem is exactly the
+ReLU-net reachability problem with no preprocessing to reason about. The target set
+is
+\[
+A^\star \;=\; \{\, h : g(h) \ge \tau \,\}, \qquad \tau = 0 .
+\]
+Crucially, $g$ is a \emph{measured} approximation, not an assumed one: we report
+its fidelity to the classifier (Pearson correlation and sign agreement) as a
+headline number (Section~\ref{sec:results}).
+
+\subsection{A sound CROWN($+$IBP) certificate over a per-dimension ball}
+
+Given a benign (``deployment'') activation $h_0$ and a per-dimension radius vector,
+we certify whether $A^\star$ is reachable inside the box
+\[
+B(h_0,\varepsilon) \;=\; \{\, h : |h_i - h_{0,i}| \le \varepsilon\,\sigma_i \ \forall i \,\},
+\]
+where $\sigma_i$ is the per-dimension activation standard deviation from the
+surrogate meta, so $\varepsilon$ is measured in per-dimension std units. A sound
+verifier returns an upper bound $U \ge \max_{h \in B} g(h)$; then
+\[
+U < \tau \;\;\Longrightarrow\;\; A^\star \text{ is provably unreachable from } h_0
+\text{ within } \varepsilon .
+\]
+Sweeping $\varepsilon$ upward (the bound is monotone in $\varepsilon$) gives a
+\emph{certified radius}: the largest budget still certified unreachable.
+
+\paragraph{Why a native bound.}
+The natural choice is CROWN via \texttt{auto\_LiRPA}~\cite{xu2020autolirpa,
+zhang2018crown}. We found it unusable under current \texttt{torch}: the library
+pins \texttt{torch}\,$<$\,1.13 and imports private ONNX symbols that newer
+\texttt{torch} has removed, so the import raises under \texttt{torch}\,$\ge$\,2.
+Rather than downgrade the whole stack, we re-derive the bound from scratch in pure
+\texttt{torch}. The code attempts \texttt{auto\_LiRPA} first and transparently
+falls back to the native path; in our environment it always uses the native path.
+
+\paragraph{The two bounds we combine.}
+Let $[\,x_\ell, x_u\,]$ be the input box. Interval propagation (IBP) pushes the box
+through the affine and ReLU layers using $W^+ = \max(W,0)$ and $W^- = \min(W,0)$:
+the pre-activation interval is $z_u = x_u W_1^{+\top} + x_\ell W_1^{-\top} + b_1$
+(and symmetrically for $z_\ell$), ReLU is monotone, and a final affine step yields a
+sound $U_{\mathrm{IBP}}$. CROWN instead relaxes each \emph{unstable} ReLU neuron
+(one with $z_\ell < 0 < z_u$) with two linear bounds,
+\[
+\mathrm{ReLU}(z) \le \tfrac{z_u}{z_u - z_\ell}\,(z - z_\ell), \qquad
+\mathrm{ReLU}(z) \ge \alpha\,z \ \ (\alpha \in \{0,1\}\ \text{chosen adaptively}),
+\]
+and back-propagates the (single, positive) output coefficient through the hidden
+layer, selecting the upper line where the back-propagated coefficient is
+non-negative and the lower line otherwise; maximizing the resulting affine form over
+the box gives a sound $U_{\mathrm{CROWN}}$. Neither bound dominates: CROWN is
+tighter for small boxes (few unstable neurons) while IBP can win once most neurons
+are unstable at large $\varepsilon$. We therefore return the elementwise minimum
+\[
+U \;=\; \min\big(U_{\mathrm{CROWN}},\, U_{\mathrm{IBP}}\big),
+\]
+which is sound and no worse than either --- exactly the CROWN-IBP
+combination~\cite{zhang2020crownibp}. All bound computations are carried out in
+\texttt{float64} and are differentiable in $(W_1, b_1, W_2, b_2)$.
+
+\paragraph{Runtime soundness witness.}
+Because a verifier that silently returns a value below the true maximum is worse
+than no verifier, we enforce soundness at runtime. On every \texttt{certify} call we
+draw $2000$ uniform samples inside $B$ (plus the anchor), evaluate $g$ at each, and
+assert $U \ge \max_{\text{samples}} g - 10^{-4}$. The sampled maximum is a valid
+lower bound on the true maximum, so a violation is a verifier bug and raises an
+\texttt{AssertionError} immediately. We never report a bound we cannot defend.
+
+\subsection{The differentiable certificate as a regularizer}
+
+Raghunathan's key observation is that the bound $U(\theta; h_0, \varepsilon)$ is a
+differentiable function of the network parameters $\theta$. We can therefore treat
+``the certified bound at the benign anchors'' as a loss and descend it, which pushes
+$A^\star$ away from those anchors and enlarges the certified radius. We demonstrate
+the mechanism on the (clean closed-form) IBP bound with the objective
+\[
+\mathcal{L}(\theta) \;=\; \underbrace{\tfrac{1}{n}\sum_{j} \mathrm{ReLU}\!\big(U_{\mathrm{IBP}}(\theta; h_0^{(j)}, \varepsilon) + m\big)}_{\text{drive each anchor's bound below } -m}
+\;+\; \lambda \underbrace{\big\| g_\theta(X) - g_{\theta_0}(X) \big\|_2^2}_{\text{pin logits, preserve accuracy}},
+\]
+with margin $m$ and a keep-term that holds bank logits near their originals so the
+decision boundary (hence accuracy) barely moves. We report this as a before/after
+\emph{mechanism} demonstration with a handful of gradient steps and fixed
+hyper-parameters, not a tuned result; the point is the \emph{direction} of the
+change (radius up, accuracy flat), not its magnitude.
+
+\subsection{GCG/HotFlip inversion}
+
+The certificate is one-sided: when $U \ge \tau$ it cannot conclude reachability. We
+get a constructive witness from a discrete token search. Starting from a benign
+prefix followed by a few adversarial tokens, each step (i) computes the HotFlip
+gradient of $g$ with respect to the one-hot token matrix --- equivalently
+$\nabla_{\text{emb}}\,g \cdot E$ for the embedding matrix $E$ --- and takes, per
+adversarial position, the top-$k$ candidate tokens by this linear estimate; then
+(ii) evaluates the \emph{true} pooled-activation score of a batch of sampled swaps
+and greedily keeps the single best improving swap. Candidate tokens are restricted
+to printable-ASCII GPT-2 tokens so the suffix stays human-readable. A matched
+random-swap control under the same evaluation budget serves as a baseline. The
+search runs against the real model's grad-enabled embedding path and the surrogate,
+so a crossing is a genuine geometric fact about $A^\star$, not an approximation.
+
+\subsection{Loop closure as the on-manifold check}
+
+A crossing tells us only that the found prompt's activation is \emph{numerically}
+above $\tau$. That is not the same as the activation actually \emph{reading as}
+eval-aware: a search that hits $A^\star$ at a point far off the activation manifold
+would be a spurious, gamed crossing. The loop-closure step guards against this. It
+re-extracts the found prompt's activation, re-verbalizes it, and asks --- via the
+nearest labelled neighbours --- whether the language readout agrees with the
+geometry. When ``crossed $\tau$'' and ``reads as eval-aware'' \emph{agree}, the
+crossing is corroborated; when they \emph{disagree}, that is exactly the
+probe-gaming case we want to surface and report. This agreement check is the
+on-manifold complement to the certificate: the certificate bounds what is reachable,
+and loop-closure tests whether a reached point is semantically the concept.

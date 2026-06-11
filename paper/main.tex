@@ -1,0 +1,55 @@
+\documentclass[11pt]{article}
+
+% --- standard, self-contained preamble (no external .sty downloads) ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue!45!black,citecolor=blue!45!black,
+            urlcolor=blue!45!black}
+
+% --- a clearly-marked TODO macro for in-flight results ---
+% \todo{...} renders an inline, boxed, coloured note so reviewers can see at a
+% glance which numbers are placeholders awaiting parallel runs.
+\newcommand{\todo}[1]{%
+  \par\medskip
+  \begingroup
+  \setlength{\fboxsep}{6pt}%
+  \noindent\colorbox{yellow!35}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{%
+  \emergencystretch=3em\hbadness=10000\relax
+  \textbf{\textcolor{red!60!black}{TODO}}: #1\par}}%
+  \endgroup\par\medskip
+}
+% inline (no paragraph break) variant for use inside a sentence / table cell
+\newcommand{\todoinline}[1]{\textcolor{red!60!black}{\textbf{[TODO: #1]}}}
+
+\title{\textbf{Certified Reachability of NLA-Defined Concepts:\\
+Proving When a Model Can(not) Recognize It Is Being Tested}}
+
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\input{sections/abstract}
+\end{abstract}
+
+\input{sections/intro}
+\input{sections/related}
+\input{sections/method}
+\input{sections/results}
+\input{sections/limitations}
+\input{sections/conclusion}
+
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\end{document}

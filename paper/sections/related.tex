@@ -1,0 +1,63 @@
+\section{Related work}
+
+\paragraph{NLA and mechanistic interpretability.}
+A long line of interpretability work reads structure out of model internals, from
+linear probes that decode features from intermediate
+representations~\cite{alain2017probing} to sparse-dictionary methods that recover
+interpretable directions in superposition~\cite{bricken2023monosemanticity,
+templeton2024scaling}. Natural Language Autoencoders~\cite{nla2026} push this
+further by training a decoder that verbalizes an activation directly into natural
+language, so that a model's internal state can be \emph{read} as text. Our use of
+the NLA idea is narrow and instrumental: we treat the verbalizer's text, scored by
+a classifier, as the \emph{definition} of a concept, which lets a downstream
+component decide ``does this internal state read as test-awareness?'' without our
+having to hand-pick an activation direction. We stress that we do not have a trained
+NLA locally; our verbalizer is a retrieval-plus-projection stand-in
+(Section~\ref{sec:method}), and every readout it emits is tagged as such.
+
+\paragraph{Certified robustness and convex relaxations.}
+Empirical adversarial robustness can always be undercut by a stronger attack, which
+motivated \emph{certified} defenses that produce a one-sided guarantee. Raghunathan,
+Steinhardt and Liang gave a semidefinite and a dual/linear relaxation that upper-bound
+the worst-case margin of a one-hidden-layer ReLU network over an $L_\infty$
+ball, and --- the part we lean on most --- made that bound differentiable so it can
+be optimized as a regularizer~\cite{raghunathan2018certified,raghunathan2018sdp}.
+Parallel and follow-on work includes the convex outer adversarial
+polytope~\cite{wong2018provable}, CROWN's general-activation backward linear
+relaxation~\cite{zhang2018crown}, interval bound propagation~\cite{gowal2018ibp},
+and their combination CROWN-IBP~\cite{zhang2020crownibp}, later packaged in the
+\texttt{auto\_LiRPA} library~\cite{xu2020autolirpa}. We use this machinery in an
+unusual direction. Standard certified defense asks ``can an adversary flip the
+predicted label inside a ball?''; we ask ``can \emph{any} input inside a ball reach
+a designated internal region $A^\star$?'', which is the same worst-case-output
+computation read as a reachability question. Because $A^\star$ is the decision
+region of a one-hidden-layer ReLU network by construction, the 2018 certificate
+applies essentially verbatim.
+
+\paragraph{Discrete inversion.}
+On the constructive side, finding a real prompt that lands in $A^\star$ is a
+discrete search over tokens. We use HotFlip's gradient linearization of the
+one-hot input~\cite{ebrahimi2018hotflip} inside a greedy coordinate-gradient (GCG)
+loop~\cite{zou2023gcg}, scoring candidate swaps against the true model and surrogate.
+This is the same family of methods used to attack aligned LLMs, here aimed at
+crossing a concept threshold rather than eliciting a harmful string.
+
+\paragraph{Evaluation-awareness.}
+The phenomenon we target is now documented in frontier-model reporting. For Claude
+Sonnet~4.5, evaluation-awareness was verbalized in roughly $16\%$ of code-safety
+test transcripts and roughly $26\%$ of SWE-bench-style transcripts, versus under
+$1\%$ of real user traffic, and a political-sycophancy test was explicitly flagged
+in about $13\%$ of transcripts~\cite{anthropic2025sonnet45}. These numbers are our
+motivation, not our data: our experiments run on GPT-2 with a synthetic
+eval-vs-deploy task, and the realistic rates above describe the gap we ultimately
+want a certified method to speak to.
+
+\paragraph{What a certificate does \emph{not} answer.}
+A reachability certificate is about \emph{inference-time} inputs: which prompts can
+or cannot drive the model into $A^\star$. It says nothing about which
+\emph{training} examples instilled the concept in the first place. That second
+question --- attributing a behavior back to data --- is the province of influence
+functions and related attribution methods~\cite{koh2017influence,grosse2023influence},
+and is out of scope here. We make this distinction explicit because an early framing
+of this project conflated the two, and the correction matters for how the result is
+read (Section~\ref{sec:limitations}).

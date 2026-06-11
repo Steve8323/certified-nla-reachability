@@ -1,0 +1,41 @@
+Frontier language models increasingly behave differently when they appear to
+detect that they are being evaluated, which undermines the safety evaluations
+meant to govern their deployment. We ask a question that sits between
+interpretability and formal verification: given an internal ``I am being tested''
+concept, can we \emph{prove} which inputs do, and which provably do not, drive a
+model into that state? We answer it for a small system by mashing together two
+prior lines of work. From Anthropic's Natural Language Autoencoder (NLA) we borrow
+the idea of \emph{defining} a concept by the text a verbalizer emits for an
+activation; from Raghunathan, Steinhardt and Liang's certified defenses we borrow
+a \emph{sound} convex relaxation over a one-hidden-layer ReLU network. Concretely,
+on cached GPT-2 activations we (i) define the eval-aware target set $A^\star$ as
+the decision region of a ReLU surrogate distilled from an NLA-text-to-classifier
+pipeline, with the surrogate's fidelity to the classifier measured (held-out
+$\mathrm{corr}=0.99$, sign agreement $1.00$), not assumed; (ii) certify with a
+native, pure-\texttt{torch} CROWN($+$IBP) bound over a per-dimension
+$\varepsilon\!\cdot\!\sigma$ $L_\infty$ ball (we found the published
+\texttt{auto\_LiRPA} incompatible with current \texttt{torch}, so the bound is
+re-derived from scratch and checked against a brute-force sampling witness on every
+call); (iii) use the differentiability of that bound as a regularizer that enlarges
+the certified radius (mean $0.29\!\to\!0.49$ standard-deviation units with bank
+accuracy held at $1.00$); (iv) invert with a GCG/HotFlip token search that drives a
+benign prompt's activation across the threshold ($-8.95\!\to\!+4.72$, beating
+random search); and (v) close the loop by re-verbalizing the result and checking
+that geometry and language agree. The most robust finding is a negative one:
+budget-projected ascent can force the surrogate above threshold, but only roughly
+$24\sigma$ off the activation manifold, where the surrogate reports ``eval'' while
+the NLA re-decode still reads ``ordinary'' ($P\!\approx\!0.04$) --- so the
+loop-closure check catches off-manifold certificate-gaming that the geometry alone
+would miss. We are explicit about what this is not: the task is a synthetic,
+near-separable stand-in (so several headline metrics saturate); certification
+holds in activation space \emph{through the surrogate}, not back through the full
+transformer to discrete tokens; the verbalizer is a retrieval stand-in rather than
+a trained NLA; and a reachability certificate finds inference-time inputs that
+reach $A^\star$, \emph{not} the training examples that instilled the concept --- a
+distinct question that needs influence functions. We present the system as a
+validated methods skeleton. On a harder, deliberately label-ambiguous task the
+saturated metrics drop to a realistic AUROC of $0.841\pm0.021$; an off-manifold
+sweep strengthens the gaming finding (the readout catches $100\%$ of off-manifold
+certificate crossings, $6/6$ anchors); and pushing the certificate one transformer
+block deeper shrinks the certified radius ${\sim}60\times$, quantifying how far the
+guarantee currently reaches.

@@ -1,0 +1,35 @@
+\section{Conclusion}
+
+We asked whether one can \emph{prove} which inputs do, and which provably do not,
+drive a model into an internal ``I am being tested'' state, and we built a working
+answer for a small system by joining two prior ideas that had not been combined:
+defining a concept by the text an activation-verbalizer emits (the NLA half) and
+certifying reachability of that concept with a sound convex relaxation over a
+one-hidden-layer ReLU network (the Raghunathan half). On cached GPT-2 the pipeline
+runs end to end: it defines the eval-aware target $A^\star$, distils it into a
+certifiable surrogate whose fidelity is measured rather than assumed, certifies
+unreachability with a native, runtime-checked CROWN$(+$IBP) bound, enlarges the
+certified radius by descending that differentiable bound, inverts to a real prompt
+that crosses the threshold, and closes the loop to check that the crossing is
+semantically real.
+
+Two things are worth carrying forward. The machinery is real and the certificate is
+genuinely sound --- every bound is validated against a brute-force witness, and the
+tests pass. And the most robust finding is a cautionary one: a target defined by
+geometry alone can be gamed by forcing a score across threshold far off the
+activation manifold, where the surrogate says ``eval'' and the language readout says
+``ordinary''; the loop-closure check catches exactly this. That negative result is,
+we think, the part most likely to survive scrutiny, and it argues that
+certificate-based and language-based checks are complementary rather than redundant.
+
+We are equally clear about what the result is not. The task is synthetic and
+near-separable, so most metrics saturate; certification is local, in activation space
+through the surrogate, not back through the full transformer to tokens; the
+verbalizer is a retrieval stand-in, not a trained NLA; and a reachability certificate
+finds inference-time inputs that reach $A^\star$, not the training data that instilled
+it. The four in-flight extensions --- a harder non-saturated task with error bars, a
+deeper-layer certificate with CROWN/IBP ablations, the full off-manifold gaming sweep,
+and a real open-model NLA --- are what would turn this validated skeleton into honest
+science. The contribution of this paper is the skeleton itself: a concrete way to put
+``define a concept in language'' and ``certify whether it is reachable'' in the same
+loop, with the soundness and the stand-ins labelled at every step.

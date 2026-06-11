@@ -1,0 +1,85 @@
+\section{Introduction}
+
+A safety evaluation is only worth running if the model cannot tell it is one.
+There is now direct evidence that this assumption is breaking down. In Anthropic's
+reporting on Claude Sonnet~4.5, the model verbalized awareness that it was being
+tested in roughly $16\%$ of code-safety evaluation transcripts and roughly $26\%$
+of SWE-bench-style transcripts, against well under $1\%$ of real user traffic; on a
+political-sycophancy probe the model explicitly flagged the test framing in about
+$13\%$ of transcripts~\cite{anthropic2025sonnet45}. When a model behaves
+differently because it has recognized the evaluation frame, the measured behavior
+is no longer the deployed behavior, and the entire chain of safety arguments built
+on those measurements is compromised.
+
+This motivates a question that, to our knowledge, has not been posed in exactly
+this form: \emph{given an internal ``I am being tested'' concept, can we prove
+which inputs reach it and which provably cannot?} A proof of \emph{unreachability}
+around an activation would be a genuine guarantee --- not a correlation, not an
+empirical attack that simply failed to find anything --- that no small perturbation
+can flip the model into the eval-aware state. A constructive \emph{reachability}
+witness, conversely, would be a concrete prompt that demonstrably crosses into the
+state. Both are useful: the first underwrites a claim that a particular evaluation
+context is indistinguishable from deployment; the second is a red-team tool.
+
+\paragraph{A two-paper mash-up.}
+We obtain a working answer for a small system by combining two prior lines of work
+that were not designed to meet.
+
+\emph{Defining the concept (the NLA half).} Anthropic's Natural Language
+Autoencoder~\cite{nla2026} verbalizes a model's internal activations into text. We
+repurpose this idea to \emph{define} the target concept: rather than hand-label
+activations, we let a verbalizer turn an activation into an English description and
+let a text classifier decide whether that description reads as ``the model knows it
+is being evaluated.'' The concept is thus grounded in language the model's own
+internal state emits, not in an externally imposed direction.
+
+\emph{Certifying reachability (the Raghunathan half).} Raghunathan, Steinhardt and
+Liang~\cite{raghunathan2018certified,raghunathan2018sdp} introduced a sound convex
+relaxation that produces a \emph{certificate} of robustness for a one-hidden-layer
+ReLU network: an upper bound on the worst-case output over an $L_\infty$ ball that,
+crucially, is itself differentiable and can be optimized. We use exactly this
+machinery, but turned around: instead of certifying that a classifier's label
+\emph{cannot} be flipped, we certify that the eval-aware region \emph{cannot} be
+reached from a benign activation within a perturbation budget.
+
+The bridge between the two halves is that we make the certified object a
+one-hidden-layer ReLU network on continuous activations --- precisely Raghunathan's
+architecture class. Since the relaxation cannot be pushed soundly through a
+discrete text decoder and an n-gram classifier, we distil the NLA-text-to-classifier
+map into such a network (a \emph{surrogate} $g$) and report how faithfully $g$
+tracks the classifier rather than pretending the distillation is exact.
+
+\paragraph{Contributions.}
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt,topsep=2pt]
+  \item \textbf{A pipeline that connects concept definition to certified
+  reachability.} On cached GPT-2 (residual layer~6) we define an eval-aware target
+  set $A^\star$ from an NLA-style verbalizer and a text classifier, distil it into
+  a certifiable ReLU surrogate, and certify reachability of $A^\star$ around benign
+  activations. The whole loop runs on a laptop and ships with tests.
+  \item \textbf{A sound, self-contained certificate.} We found the published
+  \texttt{auto\_LiRPA} library~\cite{xu2020autolirpa} unusable under current
+  \texttt{torch}, so we re-derive a CROWN backward bound~\cite{zhang2018crown}
+  combined with interval propagation~\cite{gowal2018ibp} from scratch in pure
+  \texttt{torch}. Soundness is enforced at runtime: every bound is checked against
+  a brute-force sampling witness, and a violation raises immediately.
+  \item \textbf{The certificate as a training signal.} Because the bound is
+  differentiable, descending it pushes $A^\star$ away from benign activations and
+  enlarges the certified radius --- Raghunathan's original move --- which we show as
+  a before/after mechanism demonstration.
+  \item \textbf{Constructive inversion plus a loop-closure check.} A GCG/HotFlip
+  token search~\cite{zou2023gcg,ebrahimi2018hotflip} produces a real prompt whose
+  activation crosses the threshold, and a re-verbalization step checks that the
+  crossing is semantically real and not a numerical artifact.
+  \item \textbf{A robust negative result.} Budget-projected ascent on the surrogate
+  can satisfy the threshold, but only far off the activation manifold, where the
+  surrogate says ``eval'' and the language readout says ``ordinary.'' This
+  off-manifold certificate-gaming is exactly what the loop-closure check is for, and
+  it reproduces across anchors.
+\end{enumerate}
+
+We are deliberately explicit throughout about the boundary between what is real and
+sound (the GPT-2 activations, the certificate, the inversion) and what is an honest
+stand-in (the synthetic eval-vs-deploy labels and the retrieval-based verbalizer).
+We present the system as a validated methods skeleton rather than a finished
+empirical result about real eval-awareness, and we flag four extensions, currently
+in progress, that are needed to make it honest science (Section~\ref{sec:results}).

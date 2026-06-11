@@ -1,0 +1,58 @@
+\section{Limitations}
+\label{sec:limitations}
+
+We state the limitations prominently because they bound what the result means. This
+is a validated methods skeleton, not evidence about real eval-awareness.
+
+\paragraph{The task is synthetic and near-separable, so several metrics saturate.}
+The eval-vs-deploy labels come from a synthetic prompt set in which the eval class
+wears blatant uniforms (``You are being evaluated'', ``\texttt{[BENCHMARK]}'',
+SWE-bench-style and MMLU-style framing). The two classes are therefore nearly
+linearly separable, which is exactly why probe accuracy, classifier accuracy, AUROC,
+and surrogate sign agreement all pin at or near $1.00$. A saturated $1.00$ restates
+that the activations are separable; it is not a difficulty benchmark and should not
+be read as one. Worse, on this easy data the top-half stress tests show the headline
+accuracy is partly \emph{circular}: the stand-in verbalizer's nearest-neighbour
+majority already equals the true label, and the classifier mostly echoes it.
+Certifying that a region is unreachable is only interesting when the region is
+genuinely close to the deployment manifold; a harder, overlapping task (extension~(i))
+is required to make the certified radii meaningful.
+
+\paragraph{Certification is in activation space through the surrogate, not back
+through the full transformer to tokens.} The certificate bounds reachability of
+$A^\star$ within an $L_\infty$ ball \emph{in the residual-stream activation at one
+layer}, evaluated through the one-hidden-layer surrogate $g$. It does not certify
+reachability back through GPT-2's attention and LayerNorm to the discrete token
+input. Sound, full-depth certification through a real transformer is the genuine
+research frontier and is unsolved here; it is precisely why the constructive side is
+done heuristically with a token search rather than with a certificate. So our
+``unreachable'' guarantees are local activation-space guarantees, not guarantees
+about what no prompt can do.
+
+\paragraph{The verbalizer is a retrieval stand-in, not a trained NLA.} We do not have
+a trained Natural Language Autoencoder locally. The verbalizer is a deliberately
+transparent stand-in that grounds its text in $h$'s nearest labelled neighbours and
+its projection on the eval-vs-deploy axis; every readout it emits is tagged
+\texttt{[retrieval-AV stand-in]}. Because the same labelled bank drives both the
+retrieval readout and the labels, the stand-in leaks the label, which is part of why
+the top-half accuracy is circular. The classifier and surrogate fidelity are real and
+measured, but the \emph{definition} of the concept is only as good as the verbalizer,
+and a retrieval stand-in is not a trained decoder of the model's internal state
+(extension~(iv)).
+
+\paragraph{A probe direction is not a causal feature.} Even with a perfect
+verbalizer, $A^\star$ is the decision region of a learned readout, and a readout
+direction need not correspond to a causal internal feature the model uses. The
+loop-closure agreement check mitigates spurious crossings but does not establish
+causality; demonstrating that crossing $\tau$ \emph{causes} eval-aware behavior would
+require interventional experiments beyond this prototype.
+
+\paragraph{The premise correction: reachability is not attribution.} Finally, and
+importantly, a reachability certificate answers ``which \emph{inference-time inputs}
+reach $A^\star$,'' \emph{not} ``which \emph{training examples} instilled the concept.''
+These are different questions. An earlier framing of this project conflated them; the
+correction is that data attribution --- tracing a behavior back to the examples that
+caused it --- is the job of influence functions~\cite{koh2017influence,
+grosse2023influence}, not of a convex-relaxation certificate. Nothing in this paper
+speaks to how eval-awareness was learned, only to which inputs can elicit it at test
+time.

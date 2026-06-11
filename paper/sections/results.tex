@@ -1,0 +1,205 @@
+\section{Results}
+\label{sec:results}
+
+We report two end-to-end runs on cached GPT-2 (layer~6, $d=768$). The
+\emph{bottom-half} run defines $A^\star$ directly from a ReLU probe on synthetic
+eval-vs-deploy activations and exercises the full certify $\to$ regularize $\to$
+invert $\to$ close-loop chain. The \emph{top-half} run replaces the directly-trained
+probe with the NLA-text-to-classifier-to-surrogate construction of
+Section~\ref{sec:method}. Unless noted, $\tau = 0$, the certified ball is
+per-dimension $L_\infty$ of radius $\varepsilon\sigma_i$, and the fixed $\varepsilon$
+for point tables is $0.25$. All bounds passed the runtime sampling-witness check on
+every call.
+
+\subsection{Bottom half: direct probe, full chain}
+
+The ReLU probe separates the synthetic classes cleanly (train/val accuracy $1.00$),
+with eval and deploy score means of $+8.8$ and $-10.4$. Table~\ref{tab:bottom}
+collects the headline numbers. Every benign anchor is certified unreachable at
+$\varepsilon=0.25$, with a mean certified radius of $0.29$ std units. Descending the
+differentiable bound enlarges that radius to $0.49$ while bank accuracy stays at
+$1.00$. GCG inversion drives a benign prompt from a score of $-8.95$ to $+4.72$,
+crossing $\tau$ and beating a matched random-search baseline ($1.71$). Loop closure
+agrees: all $5/5$ nearest neighbours of the found activation are genuine
+SWE-bench-style eval prompts, so geometry and readout concur.
+
+\begin{table}[t]
+\centering
+\caption{Bottom-half run (direct ReLU probe on synthetic eval-vs-deploy
+activations). The synthetic task is near-separable, which is why accuracy
+saturates; see Section~\ref{sec:limitations}.}
+\label{tab:bottom}
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{stage} & \textbf{result} \\
+\midrule
+probe ($A^\star$) & train/val accuracy $1.00$/$1.00$; eval vs deploy score mean $+8.8$ / $-10.4$ \\
+certify & native CROWN$(+$IBP min); all benign anchors certified unreachable at $\varepsilon=0.25$; \\
+        & mean certified radius $\mathbf{0.29}$ std-units \\
+regularize & certified radius $\mathbf{0.29 \to 0.49}$ with bank accuracy held at $1.00$ \\
+invert (GCG) & benign prefix $+8$ tokens: score $\mathbf{-8.95 \to +4.72}$, crosses $\tau$; beats random ($1.71$) \\
+loop closure & geometry and readout \textbf{agree}; $5/5$ nearest neighbours are real eval-frame texts \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Top half: NLA-grounded target and the off-manifold finding}
+
+When the target is grounded in the NLA-text classifier, the classifier labels the
+verbalizer's decodes of real activations with accuracy and AUROC of $1.00$ (on this
+synthetic, near-separable data), and the distilled surrogate $g$ is a faithful
+shadow of the classifier: held-out correlation $0.99$ (all-bank $0.996$) and sign
+agreement $1.00$. The CROWN certificate over $g$ gives a mean certified radius of
+$\approx 0.13$ std units; coverage is local, with $100\%$ of anchors certified at
+$\varepsilon=0.05$ but only $8\%$ at the default $\varepsilon=0.25$.
+
+The most informative result is the budget-projected ascent sweep
+(Table~\ref{tab:offmanifold}). Inside the certified radius the surrogate provably
+cannot cross $\tau$ --- the bound holds, a soundness check. Forcing the surrogate
+across requires an $L_2$ displacement of roughly $20$--$24\sigma$, far off the
+activation manifold; at that point $g$ reports ``test-aware'' but the NLA re-decode
+still reads ``ordinary'' ($P(\text{eval}) \approx 0.04$), and the loop-closure check
+flags the disagreement. This off-manifold certificate-gaming reproduces across
+anchors ($8/8$ forced crossings disagree with the readout), and is, in our view, the
+one genuinely new and robust finding here: a geometry-only target gets gamed, and
+the language readout catches it. The companion validation suite passes $16/16$ at
+this configuration. Discrete token inversion (the bottom half) avoids this failure
+by construction, because it can only reach activations that real prompts actually
+produce.
+
+\begin{table}[t]
+\centering
+\caption{Top-half budget-projected ascent from benign anchor (start $g=-5.71$,
+certified radius $0.185$). Inside the certified radius the surrogate cannot cross;
+forced across at large $L_2$ budget it does, but only far off-manifold, where the
+NLA re-decode disagrees and loop-closure flags it.}
+\label{tab:offmanifold}
+\small
+\begin{tabular}{@{}rrccc@{}}
+\toprule
+$L_2$ budget (std) & $g_{\text{end}}$ & crossed $\tau$? & decode $P(\text{eval})$ & loop agrees? \\
+\midrule
+$0.185$ & $-5.58$ & no  & $0.006$ & \checkmark \\
+$1$     & $-4.98$ & no  & $0.006$ & \checkmark \\
+$5$     & $-1.89$ & no  & $0.006$ & \checkmark \\
+$20$    & $+8.05$ & yes & $0.037$ & $\times$ off-manifold \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Honest stress tests of the headline numbers}
+
+The top-half run includes six stress tests that deliberately attack its own metrics
+(Table~\ref{tab:stress}). They show, plainly, that most of the saturated numbers are
+inflated by the easy data and the label-leaking stand-in verbalizer: the
+classifier's accuracy of $1.00$ largely restates that the verbalizer's k-NN majority
+already equals the true label, and the NLA-grounded surrogate is nearly identical to
+the old activation probe (sign agreement $1.00$, correlation $0.98$), so grounding
+the target in language has not yet changed the certified object. The certificate is
+sound but local, the four ``sister'' safe targets are degenerate (one shared
+direction), and the classifier sometimes keyword-matches. Only the off-manifold
+catch survives this scrutiny cleanly. We include these tests in the paper precisely
+because they are the honest read of the current evidence.
+
+\begin{table}[t]
+\centering
+\caption{Self-stress tests run on every top-half build. The intent is to show which
+headline numbers are real signal and which are artifacts of the synthetic data and
+stand-in verbalizer.}
+\label{tab:stress}
+\small
+\begin{tabular}{@{}p{3.0cm}p{5.2cm}p{4.4cm}@{}}
+\toprule
+\textbf{test} & \textbf{result} & \textbf{reading} \\
+\midrule
+label leakage & full $1.00$; k-NN majority $1.00$; clf echoes k-NN $1.00$ & circular \\
+surrogate vs old probe & sign $1.00$; corr $0.98$ & $\sim$identical (grounding changed nothing yet) \\
+certificate coverage & $\varepsilon{=}0.05$: $100\%$; $0.13$: $96\%$; $0.25$: $8\%$ & sound but local \\
+off-manifold catch & $8/8$ anchors disagree after crossing & \textbf{robust --- the real finding} \\
+sister independence & endpoints $0.0$ std apart & degenerate (one direction) \\
+meaning vs keywords & $3/4$ stress cases correct & partly keyword-matching \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Harder settings and ablations}
+\label{sec:harder}
+
+The four extensions flagged in earlier drafts have now been run; we fold in the
+real numbers, which sharpen---and in two places correct---the headline story.
+
+\paragraph{(i) Harder, non-saturated task.}
+On a \emph{frozen}, mean-pooled GPT-2 readout the eval-vs-deploy task cannot be
+made hard by wording alone: mean-pooling preserves marker tokens losslessly, so
+register, length, or even a single tail clause (``\dots for the test'' vs.\ ``\dots
+for fun'') stay perfectly separable, and every clean-label scheme we tried still
+hit AUROC $1.00$. Genuine overlap requires non-zero Bayes error, which we induce
+with calibrated label noise---the same surface text appears under both labels
+(difficulty knob $0.55$). Over five seeds with a $30\%$ held-out split this yields
+accuracy $0.740 \pm 0.019$ and \textbf{AUROC $0.841 \pm 0.021$} ($<0.95$ confirmed),
+with a mean certified radius of $0.078 \pm 0.073$ std units against this non-trivial
+target (Table~\ref{tab:harder}). The lesson is itself a result: mean-pooled probes
+read lexical markers, so honest difficulty must come from label ambiguity, not
+phrasing.
+
+\paragraph{(ii) Bound tightness and a deeper certificate.}
+Separating the bounds, native CROWN is tighter than IBP by a mean of $0.72$ logits
+over $\varepsilon$, and the real eval direction certifies \emph{further} than a
+random matched-scale direction (mean radius $0.295 \pm 0.039$ vs.\ $0.213$)---benign
+activations sit further from the eval region than from a generic half-space. Pushing
+the certificate one transformer block deeper---a sound frozen-attention subnetwork
+covering LayerNorm, two Linears, GELU, and the probe's ReLU---the frozen forward
+reproduces the shallow score exactly (a wiring check), but the single-token certified
+radius collapses to $0.005$ vs.\ the shallow $0.295$, roughly $60\times$ harder. This
+quantifies the scale wall: a positive certified radius back toward the tokens
+\emph{exists} but is tiny, which is the honest boundary of how far the guarantee
+currently reaches.
+
+\paragraph{(iii) Full off-manifold sweep.}
+Across six anchors and a $0$--$25\sigma$ grid the off-manifold finding strengthens
+and acquires a twist. Among all points where the surrogate fires ($g \ge \tau$), the
+NLA re-decode reads ``eval'' with probability $\mathbf{0.000}$ off-manifold (catch
+rate $1.000$, $6/6$ anchors) vs.\ $0.262$ on-manifold (catch rate $0.738$). The
+twist: \emph{bare} surrogate-crossing is actually \emph{cheaper} off-manifold
+($\approx 7\sigma$) than on-manifold ($\approx 17\sigma$)---ascent finds a cheap
+gaming direction---but reaching a state that is genuinely eval-reading ($g \ge \tau$
+\emph{and} readout $=$ eval) takes $\approx 24.5\sigma$ on-manifold and is
+\textbf{never reached within $25\sigma$ off-manifold}. The off-manifold route thus
+satisfies the certificate without ever becoming genuinely eval---exactly the gaming
+the loop-closure check is for. (At $\varepsilon=0.25$ only $2/6$ anchors are
+certified-unreachable, so the certificate here is tight, not vacuous.)
+
+\paragraph{(iv) Real open-model NLA.}
+The released NLAs are real and we located them (the \texttt{kitft/nla-models}
+collection: activation-verbalizer/reconstructor pairs for four base models). We
+verified the activation-injection prompt format \emph{byte-for-byte} against the
+released metadata (injection token id $149705$, scale $150.0$). But the smallest
+released verbalizer is Qwen2.5-7B (layer~20, $3584$-d, ${\approx}15.2$\,GB BF16)---there
+is no GPT-2 or sub-7B NLA---so it neither fits this $16$\,GB host nor matches GPT-2's
+$768$-d activations. We refuse to fabricate a readout: the deliverable is a ready
+adapter with the same \texttt{verbalize($h$)} interface and a documented migration
+path (move the pipeline onto Qwen2.5-7B layer~20 and re-derive $A^\star$ there). This
+is the single change that would convert the saturated top-half metrics into honest
+science, and it is a base-model migration, not a drop-in.
+
+\begin{table}[t]
+\centering
+\caption{Harder-task run (five seeds, $30\%$ held-out) vs.\ the near-separable
+synthetic task, plus the bound and deeper-certificate ablations. The harder task is
+made hard by calibrated label noise, not phrasing (see text).}
+\label{tab:harder}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & \textbf{near-separable} & \textbf{harder task} \\
+\midrule
+accuracy              & $1.00$ & $0.740 \pm 0.019$ \\
+AUROC                 & $1.00$ & $\mathbf{0.841 \pm 0.021}$ \\
+mean certified radius & $0.29$ & $0.078 \pm 0.073$ \\
+\midrule
+\multicolumn{3}{@{}p{11cm}}{\emph{bound ablation (shallow):} CROWN tighter than IBP by $0.72$ logits; real direction $0.295$ vs.\ null $0.213$.} \\
+\multicolumn{3}{@{}p{11cm}}{\emph{deeper certificate (one block, frozen-attention, sound):} single-token radius $0.005$ vs.\ shallow $0.295$ ($\sim$$60\times$ harder).} \\
+\bottomrule
+\end{tabular}
+\end{table}
